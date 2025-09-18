@@ -110,8 +110,7 @@ namespace Rope {
             auto root_index = getRootByIndex(index);
 
             // Local position in leaf
-            std::size_t local_pos = index - offset;
-            leaf->str.insert(leaf->str.begin() + local_pos, str.begin(), str.end());
+            leaf->str.insert(leaf->str.begin() + offset, str.begin(), str.end());
 
             while (leaf->str.size() > max_leaf_size) {
                 std::string right_part(leaf->str.begin() + max_leaf_size, leaf->str.end());
@@ -173,7 +172,7 @@ namespace Rope {
 
             // 3. If no parent → move to next root
             for (std::size_t i = 0; i + 1 < roots.size(); ++i) {
-                if (roots[i]->contains(node)) { // <--- must check original node
+                if (roots[i].get() == cur) { // <--- must check original node
                     return roots[i+1]->leftmostLeaf();
                 }
             }
@@ -183,35 +182,22 @@ namespace Rope {
         Node* prevLeaf(Node* node) const {
             if (!node) return nullptr;
 
-            // 1. If left subtree exists, go to its rightmost leaf
             if (node->left) {
                 return node->left->rightmostLeaf();
-            }
-
-            Node* cur = node;
-            Node* p = cur->top;
-
-            // 2. Climb up until we come from right child
-            while (p && p->left.get() != cur) {
-                cur = p;
-                p = p->top;
-            }
-
-            if (p) {
-                // Previous leaf is the left subtree's rightmost leaf, or parent itself if leaf
-                if (p->left)
-                    return p->left->rightmostLeaf();
-                return p;
-            }
-
-            // 3. If no parent → move to previous root
-            for (int i = static_cast<int>(roots.size()) - 1; i >= 0; --i) {
-                if (roots[i]->contains(node) && i > 0) {
-                    return roots[i-1]->rightmostLeaf();
+            } else {
+                if (node->top && node->top->right.get() == node) {
+                    return node->top;
+                }
+                // it is top's left node
+                while (node->top)
+                    node = node->top;
+                for (std::size_t i = 1; i < roots.size(); ++i) {
+                    if (roots[i].get() == node) {
+                        return roots[i-1]->rightmostLeaf();
+                    }
                 }
             }
-
-            return nullptr; // start of rope
+            return nullptr;
         }
         void printTree(const Node* node, int depth = 0) const {
             if (!node) return;

@@ -61,6 +61,7 @@ file(GLOB TESTS CONFIGURE_DEPENDS
 foreach(TEST_FILE IN LISTS TESTS)
     get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
     add_executable(${TEST_NAME}_test ${TEST_FILE})
+    target_compile_options(${TEST_NAME}_test PRIVATE -g)
     target_link_libraries(${TEST_NAME}_test PRIVATE Rope)
     add_test(NAME ${TEST_NAME}_test COMMAND ${TEST_NAME}_test)
 endforeach()

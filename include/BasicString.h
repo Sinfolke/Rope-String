@@ -109,12 +109,12 @@ namespace {
                 return *this;
             }
             Base::global_pos--;
-            if (Base::pos - 1 == 0) {
+            if (Base::pos - 1 == std::size_t(-1)) {
                 Base::current = Base::tree_.prevLeaf(Base::current);
                 std::cout << "switching to str: " << Base::current->str << std::endl;
                 Base::pos = Base::current->str.size() - 1;
             } else {
-                std::cout << "increasing pos to " << --Base::pos << ", str[pos]: " << Base::current->str[Base::pos] << std::endl;
+                std::cout << "decreasing pos to " << --Base::pos << ", str[pos]: " << Base::current->str[Base::pos] << std::endl;
             }
             return *this;
         }
