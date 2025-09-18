@@ -7,6 +7,7 @@
 #include <functional>
 #include <ranges>
 #include <cstring>
+#include <iostream>
 
 namespace {
     template<typename CharT, typename Tree>
@@ -18,66 +19,108 @@ namespace {
         using reference         = CharT&;
         using iterator_category = std::forward_iterator_tag;
 
-        explicit iterator(Tree &tree, std::size_t pos = 0) : tree_(tree) {
-            if (pos >= tree.size()) {
+        explicit iterator(Tree &tree, std::size_t pos) : tree_(tree) {
+            std::cout << "got position at " << pos << ", tree size(" << tree.size() << ")" << std::endl;
+            auto size = tree_.size();
+            if (pos >= size) {
+                std::cout << "direct assignment" << std::endl;
                 current = nullptr;
-                this->pos = pos;
+                global_pos = size;
                 return;
             }
             std::size_t offset = 0;
-            std::size_t new_pos = pos;
-            current = tree.getLeafByIndex(new_pos, offset);
-            this->pos = new_pos;
+            global_pos = pos;
+            current = tree.getLeafByIndex(pos, offset);
+            this->pos = offset;
+            std::cout << "pos: " << pos << ", offset: " << offset << std::endl;
         }
-
+        explicit iterator(Tree &tree) : tree_(tree) {}
         auto operator*() const -> CharT {
+            std::cout << "pos: " << pos << ", str: " << current->str << ", sym: " << current->str[pos] << std::endl;
             return current->str[pos];
         }
 
         auto operator++() -> iterator& {
-            if (pos >= current->str.size()) {
-                current = current->right ? current->right.get() : current->top;
+            std::cout << "str: " << current->str << ", pos: " << pos << ", current->str.size(): " << current->str.size() << std::endl;
+            auto size = tree_.size();
+            if (global_pos + 1 >= size) {
+                global_pos = size;
+                current = nullptr;
+                return *this;
+            }
+            global_pos++;
+            if (pos + 1 >= current->str.size()) {
+                current = tree_.nextLeaf(current);
+                std::cout << "switching to str: " << current->str << std::endl;
                 pos = 0;
-            } else pos++;
+            } else {
+                std::cout << "increasing pos to " << ++pos << ", str[pos]: " << current->str[pos] << std::endl;
+            }
             return *this;
         }
 
         auto operator++(int) -> iterator {
-            iterator tmp = *this;
+            auto tmp = *this;
             ++(*this);
             return tmp;
         }
 
         auto operator==(const iterator& other) const -> bool {
-            return pos == other.pos;
+            return current == other.current && global_pos == other.global_pos;
         }
 
         auto operator!=(const iterator& other) const -> bool {
             return !(*this == other);
         }
 
-        auto position() const -> std::size_t { return pos; }
+        auto position() const -> std::size_t { return global_pos; }
 
     protected:
         Tree &tree_;
         std::size_t pos;
+        std::size_t global_pos;
         Tree::Node *current = nullptr;
     };
     template<typename CharT, typename Tree>
     class reverse_iterator : public iterator<CharT, Tree> {
         using Base = iterator<CharT, Tree>;
     public:
-        explicit reverse_iterator(Tree &tree, std::size_t pos = 0) : Base(tree, tree.size() - 1 - pos) {}
+        explicit reverse_iterator(Tree &tree, std::size_t pos = 0) : Base(tree) {
+            std::cout << "got position at " << pos << ", tree size(" << tree.size() << ")" << std::endl;
+            auto size = tree.size();
+            if (size - pos - 1 == std::size_t(-1)) {
+                std::cout << "direct assignment" << std::endl;
+                Base::current = nullptr;
+                Base::global_pos = std::size_t(-1);;
+                return;
+            }
+            std::size_t offset = 0;
+            Base::global_pos = size - pos - 1;
+            std::cout << "global_pos " << Base::global_pos << std::endl;
+            Base::current = tree.getLeafByIndex(Base::global_pos, offset);
+            Base::pos = Base::current->str.size() - offset;
+            std::cout << "pos: " << Base::pos << ", offset: " << offset << std::endl;
+        }
         auto operator++() -> reverse_iterator& {
-            if (Base::pos == Base::current->str.size()) {
-                Base::current = Base::current->left ? Base::current->left.get() : Base::current->top;
-                Base::pos = Base::current->str.size();
-            } else Base::pos--;
+            std::cout << "str: " << Base::current->str << ", pos: " << Base::pos << ", current->str.size(): " << Base::current->str.size() << std::endl;
+            if (Base::global_pos - 1 == std::size_t(-1)) {
+                Base::global_pos = std::size_t(-1);
+                Base::current = nullptr;
+                return *this;
+            }
+            Base::global_pos--;
+            if (Base::pos - 1 == 0) {
+                Base::current = Base::tree_.prevLeaf(Base::current);
+                std::cout << "switching to str: " << Base::current->str << std::endl;
+                Base::pos = Base::current->str.size() - 1;
+            } else {
+                std::cout << "increasing pos to " << --Base::pos << ", str[pos]: " << Base::current->str[Base::pos] << std::endl;
+            }
             return *this;
         }
 
         auto operator++(int) -> reverse_iterator {
-            iterator tmp = *this;
+            auto tmp = *this;
             ++(*this);
             return tmp;
         }
@@ -158,6 +201,10 @@ namespace Rope {
         };
         BasicString(std::initializer_list<CharT> ilist, const Allocator& alloc = Allocator() ) : tree(alloc) {
             tree.push(StringType(ilist, alloc));
+        }
+
+        void print() {
+            tree.printForest();
         }
 
         // (1) assign from const basic_string&
@@ -268,49 +315,38 @@ namespace Rope {
             return getAtPos(pos);
         }
         auto front() -> CharT& {
-            auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-            // get root node this string is located
-            NodeType *root = roots.front().get();
-            // get leaf and index in it
-            while (root->left) {
-                root = root->left.get();
+            for (auto &r : tree.getRoots()) {
+                NodeType* leaf = r.get();
+                while (leaf->left) leaf = leaf->left.get();
+                if (!leaf->str.empty()) return leaf->str.front();
             }
-            return root->str.front();
+            throw std::out_of_range("rope is empty");
         }
-        auto front() const -> const CharT {
-            auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-            // get root node this string is located
-            NodeType *root = roots.front().get();
-            // get leaf and index in it
-            while (root->left) {
-                root = root->left.get();
+        auto front() const -> const CharT& {
+            for (auto &r : tree.getRoots()) {
+                NodeType* leaf = r.get();
+                while (leaf->left) leaf = leaf->left.get();
+                if (!leaf->str.empty()) return leaf->str.front();
             }
-            return root->str.front();
+            throw std::out_of_range("rope is empty");
         }
         auto back() -> CharT& {
-            auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-            // get root node this string is located
-            NodeType *root = roots.back().get();
-            // get leaf and index in it
-            while (root->right) {
-                root = root->right.get();
+            for (auto it = tree.getRoots().rbegin(); it != tree.getRoots().rend(); ++it) {
+                NodeType* leaf = it->get();
+                while (leaf->right) leaf = leaf->right.get();
+                if (!leaf->str.empty()) return leaf->str.back();
             }
-            return root->str.back();
+            throw std::out_of_range("rope is empty");
         }
-        auto back() const -> const CharT {
-            auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-            // get root node this string is located
-            NodeType *root = roots.back().get();
-            // get leaf and index in it
-            while (root->right) {
-                root = root->right.get();
+        auto back() const -> const CharT& {
+            for (auto it = tree.getRoots().rbegin(); it != tree.getRoots().rend(); ++it) {
+                NodeType* leaf = it->get();
+                while (leaf->right) leaf = leaf->right.get();
+                if (!leaf->str.empty()) return leaf->str.back();
             }
-            return root->str.back();
+            throw std::out_of_range("rope is empty");
         }
+
         /*
          * Return raw tree reference
          */
@@ -737,29 +773,45 @@ namespace Rope {
         }
         auto operator=(std::nullptr_t) -> BasicString& = delete;
         auto operator==(const BasicString& other) const -> bool {
-            return tree == other.tree;
-        }
-        auto operator==(const StringType &other) const -> bool {
             if (size() != other.size()) {
                 return false;
             }
             auto this_ptr = begin();
             auto other_ptr = other.begin();
             while (this_ptr != end()) {
-                if (*this_ptr != *other_ptr) {
+                if (*this_ptr++ != *other_ptr++) {
                     return false;
                 }
+            }
+            return true;        }
+        auto operator==(const StringType &other) const -> bool {
+            if (size() != other.size()) {
+                std::cout << "length " << size() << " != " << other.size() << std::endl;
+                return false;
+            }
+            auto this_ptr = begin();
+            auto other_ptr = other.begin();
+            while (this_ptr != end()) {
+                if (!Traits::eq(*this_ptr, *other_ptr)) {
+                    std::cout << "compare " << *this_ptr << " != " << *other_ptr << std::endl;
+                    return false;
+                }
+                ++this_ptr;
+                ++other_ptr;
             }
             return true;
         }
         auto operator==(const CharT *s) const -> bool {
             if (size() != std::strlen(s)) {
+                std::cout << "length " << size() << " != " << std::strlen(s) << std::endl;
                 return false;
             }
             std::size_t count = 0;
             for (const auto c : *this) {
-                if (c != s[count++])
+                if (!Traits::eq(c, s[count++])) {
+                    std::cout << "compare " << c << " != " << s[count-1] << std::endl;
                     return false;
+                }
             }
             return true;
         }
@@ -769,13 +821,20 @@ namespace Rope {
 
         auto getAtPos(size_type pos) const -> CharT& {
             auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-            // get root node this string is located
-            auto root_index = tree.getRootByIndex(pos);
-            // get leaf and index in it
-            NodeType *leaf = roots[root_index]->getLeafByIndex(pos);
-            // return character at that index
-            return leaf->str[pos];
+            std::size_t offset = 0;
+            NodeType *leaf = nullptr;
+
+            // leaf_index = pos relative to the leaf
+            for (std::size_t i = 0; i < roots.size(); ++i) {
+                if (pos < offset + roots[i]->size()) {
+                    leaf = roots[i]->getLeafByIndex(pos -= offset); // pos becomes local
+                    break;
+                }
+                offset += roots[i]->size();
+            }
+            // if (!leaf) throw std::out_of_range("index out of range");
+
+            return leaf->str[pos]; // pos is now local to the leaf
         }
     };
 }

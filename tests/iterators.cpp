@@ -7,6 +7,7 @@ int main() {
     for (const auto c : str) {
         assert(c == cstr[count++], "c == cstr[count++]");
     }
+    std::cout << "reverse iteration" << std::endl;
     count = strlen(cstr) - 1; // start at last valid index
     for (auto rbegin = str.rbegin(); rbegin != str.rend(); ++rbegin) {
         std::cout << *rbegin << ", " << cstr[count] << std::endl;

@@ -1,7 +1,7 @@
 #ifndef ROPE_LIB_H
 #define ROPE_LIB_H
 
-#define ROPE_STRING_MAX_ROOT_SIZE 5 // fragmentation between root nodes in Tree
+#define ROPE_STRING_MAX_ROOT_SIZE 6 // fragmentation between root nodes in Tree
 #define ROPE_STRING_MAX_LEAF_SIZE 2 // fragmentation between string value in node
 
 #include <iostream>
