@@ -1,5 +1,5 @@
-#ifndef ISPA_BASICSTRING_H
-#define ISPA_BASICSTRING_H
+#ifndef ROPE_BASICSTRING_H
+#define ROPE_BASICSTRING_H
 #include <Node.h>
 #include <Tree.h>
 #include <vector>
@@ -7,7 +7,6 @@
 #include <functional>
 #include <ranges>
 #include <cstring>
-#include <iostream>
 
 namespace {
     template<typename CharT, typename Tree>
@@ -20,10 +19,8 @@ namespace {
         using iterator_category = std::forward_iterator_tag;
 
         explicit iterator(Tree &tree, std::size_t pos) : tree_(tree) {
-            std::cout << "got position at " << pos << ", tree size(" << tree.size() << ")" << std::endl;
             auto size = tree_.size();
             if (pos >= size) {
-                std::cout << "direct assignment" << std::endl;
                 current = nullptr;
                 global_pos = size;
                 return;
@@ -32,16 +29,13 @@ namespace {
             global_pos = pos;
             current = tree.getLeafByIndex(pos, offset);
             this->pos = offset;
-            std::cout << "pos: " << pos << ", offset: " << offset << std::endl;
         }
         explicit iterator(Tree &tree) : tree_(tree) {}
         auto operator*() const -> CharT {
-            std::cout << "pos: " << pos << ", str: " << current->str << ", sym: " << current->str[pos] << std::endl;
             return current->str[pos];
         }
 
         auto operator++() -> iterator& {
-            std::cout << "str: " << current->str << ", pos: " << pos << ", current->str.size(): " << current->str.size() << std::endl;
             auto size = tree_.size();
             if (global_pos + 1 >= size) {
                 global_pos = size;
@@ -51,10 +45,9 @@ namespace {
             global_pos++;
             if (pos + 1 >= current->str.size()) {
                 current = tree_.nextLeaf(current);
-                std::cout << "switching to str: " << current->str << std::endl;
                 pos = 0;
             } else {
-                std::cout << "increasing pos to " << ++pos << ", str[pos]: " << current->str[pos] << std::endl;
+                ++pos;
             }
             return *this;
         }
@@ -86,23 +79,18 @@ namespace {
         using Base = iterator<CharT, Tree>;
     public:
         explicit reverse_iterator(Tree &tree, std::size_t pos = 0) : Base(tree) {
-            std::cout << "got position at " << pos << ", tree size(" << tree.size() << ")" << std::endl;
             auto size = tree.size();
             if (size - pos - 1 == std::size_t(-1)) {
-                std::cout << "direct assignment" << std::endl;
                 Base::current = nullptr;
-                Base::global_pos = std::size_t(-1);;
+                Base::global_pos = std::size_t(-1);
                 return;
             }
             std::size_t offset = 0;
             Base::global_pos = size - pos - 1;
-            std::cout << "global_pos " << Base::global_pos << std::endl;
             Base::current = tree.getLeafByIndex(Base::global_pos, offset);
             Base::pos = Base::current->str.size() - offset;
-            std::cout << "pos: " << Base::pos << ", offset: " << offset << std::endl;
         }
         auto operator++() -> reverse_iterator& {
-            std::cout << "str: " << Base::current->str << ", pos: " << Base::pos << ", current->str.size(): " << Base::current->str.size() << std::endl;
             if (Base::global_pos - 1 == std::size_t(-1)) {
                 Base::global_pos = std::size_t(-1);
                 Base::current = nullptr;
@@ -111,10 +99,9 @@ namespace {
             Base::global_pos--;
             if (Base::pos - 1 == std::size_t(-1)) {
                 Base::current = Base::tree_.prevLeaf(Base::current);
-                std::cout << "switching to str: " << Base::current->str << std::endl;
                 Base::pos = Base::current->str.size() - 1;
             } else {
-                std::cout << "decreasing pos to " << --Base::pos << ", str[pos]: " << Base::current->str[Base::pos] << std::endl;
+                --Base::pos;
             }
             return *this;
         }
@@ -142,10 +129,10 @@ namespace Rope {
         using const_reference = const value_type&;
         using pointer = std::allocator_traits<Allocator>::pointer;
         using const_pointer = const std::allocator_traits<Allocator>::pointer;
-        using iterator = ::iterator<CharT, Tree<CharT, Traits, Allocator>>;
-        using const_iterator = ::iterator<const CharT, const Tree<CharT, Traits, Allocator>>;
-        using reverse_iterator = ::reverse_iterator<CharT, Tree<CharT, Traits, Allocator>>;
-        using reverse_const_iterator = ::reverse_iterator<const CharT, const Tree<CharT, Traits, Allocator>>;
+        using iterator = ::iterator<CharT, TreeType>;
+        using const_iterator = ::iterator<const CharT, const TreeType>;
+        using reverse_iterator = ::reverse_iterator<CharT, TreeType>;
+        using reverse_const_iterator = ::reverse_iterator<const CharT, const TreeType>;
         static constexpr auto npos = StringType::npos;
         BasicString() {}
         BasicString(const Allocator &alloc) : tree(alloc) {}
@@ -204,7 +191,7 @@ namespace Rope {
         }
 
         void print() {
-            tree.printForest();
+            // no-op: debug print suppressed
         }
 
         // (1) assign from const basic_string&
@@ -291,18 +278,16 @@ namespace Rope {
             return *this;
         }
 #endif
-        auto get_allocator() -> BasicString& {
+        auto get_allocator() const -> allocator_type {
             return tree.get_allocator();
         }
         auto at(size_type pos) -> CharT {
-            auto &sizes = tree.getSizes();
             if (pos >= tree.size()) {
                 throw std::out_of_range("Rope::BasicString::at");
             }
             return getAtPos(pos);
         }
         auto at(size_type pos) const -> const CharT {
-            auto &sizes = tree.getSizes();
             if (pos >= tree.size()) {
                 throw std::out_of_range("Rope::BasicString::at");
             }
@@ -316,7 +301,7 @@ namespace Rope {
         }
         auto front() -> CharT& {
             for (auto &r : tree.getRoots()) {
-                NodeType* leaf = r.get();
+                NodeType* leaf = r.first.get();
                 while (leaf->left) leaf = leaf->left.get();
                 if (!leaf->str.empty()) return leaf->str.front();
             }
@@ -324,7 +309,7 @@ namespace Rope {
         }
         auto front() const -> const CharT& {
             for (auto &r : tree.getRoots()) {
-                NodeType* leaf = r.get();
+                NodeType* leaf = r.first.get();
                 while (leaf->left) leaf = leaf->left.get();
                 if (!leaf->str.empty()) return leaf->str.front();
             }
@@ -332,7 +317,7 @@ namespace Rope {
         }
         auto back() -> CharT& {
             for (auto it = tree.getRoots().rbegin(); it != tree.getRoots().rend(); ++it) {
-                NodeType* leaf = it->get();
+                NodeType* leaf = it->first.get();
                 while (leaf->right) leaf = leaf->right.get();
                 if (!leaf->str.empty()) return leaf->str.back();
             }
@@ -340,7 +325,7 @@ namespace Rope {
         }
         auto back() const -> const CharT& {
             for (auto it = tree.getRoots().rbegin(); it != tree.getRoots().rend(); ++it) {
-                NodeType* leaf = it->get();
+                NodeType* leaf = it->first.get();
                 while (leaf->right) leaf = leaf->right.get();
                 if (!leaf->str.empty()) return leaf->str.back();
             }
@@ -363,7 +348,7 @@ namespace Rope {
 
             std::size_t pos = 0;
             for (auto& root : tree.getRoots()) {
-                for (auto leaf = root.get(); leaf; leaf = leaf->right.get()) {
+                for (auto leaf = root.first.get(); leaf; leaf = leaf->right.get()) {
                     std::copy(leaf->str.begin(), leaf->str.end(), cstr + pos);
                     pos += leaf->str.size();
                 }
@@ -408,7 +393,7 @@ namespace Rope {
             return reverse_const_iterator(tree, tree.size());
         }
         auto empty() const -> bool {
-            return tree.getSizes().front() == 0;
+            return tree.getRoots().front().second == 0;
         }
         auto size() const -> size_type {
             return tree.size();
@@ -511,47 +496,40 @@ namespace Rope {
         }
 #endif
         auto erase(size_type index = 0, size_type count = StringType::npos) -> void {
-            auto &roots = tree.getRoots();
-            auto &sizes = tree.getSizes();
-
-            std::size_t remaining = count;
-            std::size_t global_index = index;
-
-            while (remaining != 0 && global_index < tree.size()) {
-                // find leaf and adjust index to local
-                NodeType* leaf = nullptr;
-                std::size_t local_index = global_index;
-                for (auto& root : roots) {
-                    leaf = root->getLeafByIndex(local_index);
-                    if (leaf) break;
-                }
-                if (!leaf) break; // index out of range
-
-                std::size_t erase_count = std::min(remaining, leaf->str.size() - local_index);
-                leaf->str.erase(local_index, erase_count);
-
-                remaining -= erase_count;
-                global_index += erase_count;
+            size_type total = size();
+            if (index >= total) return;
+            StringType flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            flat.erase(index, count);
+            tree.clear();
+            if (!flat.empty()) {
+                tree.push(flat);
             }
         }
-        auto erase(const_iterator pos) {
-
+        auto erase(const_iterator pos) -> void {
+            auto idx = pos.position();
+            erase(idx, 1);
         }
-        auto erase(const_iterator begin, const_iterator end) {
-
+        auto erase(const_iterator first, const_iterator last) -> void {
+            auto b = first.position();
+            auto e = last.position();
+            if (e <= b) return;
+            erase(b, e - b);
         }
         auto push_back(CharT ch) -> void {
-            tree.push(ch);
+            tree.push(StringType (1, ch));
         }
         auto pop_back() -> void {
-            auto &root = tree.getRoots().back();
+            auto root = tree.getRoots().back().first;
             while (root->right) {
                 root = root->right;
             }
             root->str.pop_back();
+            tree.getRoots().back().second--;
         }
         auto append(size_type count, CharT ch) -> BasicString& {
-            tree.push(StringType {count, ch});
+            tree.push(StringType(count, ch));
             return *this;
         }
         auto append(CharT *s, size_type count) -> BasicString& {
@@ -603,7 +581,23 @@ namespace Rope {
             node->str.replace(pos, count, str);
             return *this;
         }
-        auto replace(const_iterator begin, const_iterator end, const BasicString &str) {}
+        auto replace(const_iterator first, const_iterator last, const BasicString &str) -> BasicString& {
+                    auto b = first.position();
+                    auto e = last.position();
+                    if (e < b) std::swap(b, e);
+                    size_type total = size();
+                    std::basic_string<CharT, Traits, Allocator> flat;
+                    flat.resize(total);
+                    copy(flat.data(), total, 0);
+                    // build replacement from str by flattening
+                    std::basic_string<CharT, Traits, Allocator> repl;
+                    repl.resize(str.size());
+                    str.copy(repl.data(), repl.size(), 0);
+                    flat.replace(b, e - b, repl);
+                    tree.clear();
+                    if (!flat.empty()) tree.push(flat);
+                    return *this;
+                }
         auto replace(size_type pos, size_type count, const BasicString& str, size_type pos2, size_type count2 = StringType::npos) {
             NodeType *root = tree.getRootByIndex(pos);
             NodeType *node = root->getLeafByIndex(pos);
@@ -612,22 +606,56 @@ namespace Rope {
         }
         // (4) replace(pos, count, const CharT* cstr, size_type count2)
         auto replace(size_type pos, size_type count, const CharT* cstr, size_type count2) -> BasicString& {
-            StringType tmp(cstr, count2);
-            NodeType* root = tree.getRootByIndex(pos);
-            NodeType* node = root->getLeafByIndex(pos);
-            node->str.replace(pos, count, tmp);
+            // Flatten, replace, rebuild
+            size_type total = size();
+            if (pos > total) return *this; // nothing to do if pos beyond end
+            StringType flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            flat.replace(pos, count, cstr, count2);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
             return *this;
         }
-        auto replace(const_iterator first, const_iterator last, const CharT* cstr, size_type count2 ) -> BasicString {}
+        auto replace(const_iterator first, const_iterator last, const CharT* cstr, size_type count2 ) -> BasicString& {
+            auto b = first.position();
+            auto e = last.position();
+            if (e < b) std::swap(b, e);
+            size_type total = size();
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            flat.replace(b, e - b, cstr, count2);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
+            return *this;
+        }
         // (6) replace(pos, count, const CharT* cstr)
         auto replace(size_type pos, size_type count, const CharT* cstr) -> BasicString& {
-            StringType tmp(cstr);
-            NodeType* root = tree.getRootByIndex(pos);
-            NodeType* node = root->getLeafByIndex(pos);
-            node->str.replace(pos, count, tmp);
+            // Flatten, replace, rebuild
+            size_type total = size();
+            if (pos > total) return *this; // nothing to do if pos beyond end
+            StringType flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            flat.replace(pos, count, cstr);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
             return *this;
         }
-        auto replace( const_iterator first, const_iterator last, const CharT* cstr) -> BasicString& {};
+        auto replace( const_iterator first, const_iterator last, const CharT* cstr) -> BasicString& {
+            auto b = first.position();
+            auto e = last.position();
+            if (e < b) std::swap(b, e);
+            size_type total = size();
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            flat.replace(b, e - b, cstr);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
+            return *this;
+        }
         // (8) replace(pos, count, size_type count2, CharT ch)
         auto replace(size_type pos, size_type count, size_type count2, CharT ch) -> BasicString& {
             StringType tmp(count2, ch);
@@ -636,9 +664,35 @@ namespace Rope {
             node->str.replace(pos, count, tmp);
             return *this;
         }
-        auto replace(const_iterator first, const_iterator last, size_type count2, CharT ch ) -> BasicString& {};
+        auto replace(const_iterator first, const_iterator last, size_type count2, CharT ch ) -> BasicString& {
+            auto b = first.position();
+            auto e = last.position();
+            if (e < b) std::swap(b, e);
+            size_type total = size();
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            std::basic_string<CharT, Traits, Allocator> repl(count2, ch);
+            flat.replace(b, e - b, repl);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
+            return *this;
+        }
         template<typename InputIt>
-        auto replace(const_iterator first, const_iterator last, InputIt first2, InputIt last2) -> BasicString& {}
+        auto replace(const_iterator first, const_iterator last, InputIt first2, InputIt last2) -> BasicString& {
+            auto b = first.position();
+            auto e = last.position();
+            if (e < b) std::swap(b, e);
+            size_type total = size();
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            std::basic_string<CharT, Traits, Allocator> repl(first2, last2);
+            flat.replace(b, e - b, repl);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
+            return *this;
+        }
 
         // (11) replace(pos, count, std::initializer_list<CharT> ilist)
         auto replace(size_type pos, size_type count, std::initializer_list<CharT> ilist) -> BasicString& {
@@ -659,7 +713,20 @@ namespace Rope {
             return *this;
         }
         template<class StringViewLike>
-        auto replace( const_iterator first, const_iterator last, const StringViewLike& t) {}
+        auto replace( const_iterator first, const_iterator last, const StringViewLike& t) -> BasicString& {
+            auto b = first.position();
+            auto e = last.position();
+            if (e < b) std::swap(b, e);
+            size_type total = size();
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            std::basic_string<CharT, Traits, Allocator> repl(t);
+            flat.replace(b, e - b, repl);
+            tree.clear();
+            if (!flat.empty()) tree.push(flat);
+            return *this;
+        }
         // (14) replace(pos, count, const StringViewLike& t, size_type pos2, size_type count2 = StringType::npos)
         template<class StringViewLike>
         auto replace(size_type pos, size_type count, const StringViewLike& t,
@@ -688,7 +755,7 @@ namespace Rope {
             size_type global_index = 0;  // global position while walking leaves
 
             for (auto& root : tree.getRoots()) {
-                for (auto leaf = root; leaf; leaf = leaf->right.get()) {
+                for (auto leaf = root.first.get(); leaf; leaf = leaf->right.get()) {
                     auto leaf_size = leaf->str.size();
 
                     // skip this leaf if still before pos
@@ -786,14 +853,12 @@ namespace Rope {
             return true;        }
         auto operator==(const StringType &other) const -> bool {
             if (size() != other.size()) {
-                std::cout << "length " << size() << " != " << other.size() << std::endl;
                 return false;
             }
             auto this_ptr = begin();
             auto other_ptr = other.begin();
             while (this_ptr != end()) {
                 if (!Traits::eq(*this_ptr, *other_ptr)) {
-                    std::cout << "compare " << *this_ptr << " != " << *other_ptr << std::endl;
                     return false;
                 }
                 ++this_ptr;
@@ -802,20 +867,266 @@ namespace Rope {
             return true;
         }
         auto operator==(const CharT *s) const -> bool {
-            if (size() != std::strlen(s)) {
-                std::cout << "length " << size() << " != " << std::strlen(s) << std::endl;
+            if (!s) return false;
+            size_type n = Traits::length(s);
+            if (size() != n) {
                 return false;
             }
-            std::size_t count = 0;
-            for (const auto c : *this) {
-                if (!Traits::eq(c, s[count++])) {
-                    std::cout << "compare " << c << " != " << s[count-1] << std::endl;
-                    return false;
-                }
+            // Compare without relying on iterators
+            std::vector<CharT> buf(n);
+            copy(buf.data(), n, 0);
+            for (size_type i = 0; i < n; ++i) {
+                if (!Traits::eq(buf[i], s[i])) return false;
             }
             return true;
         }
         auto operator==(std::nullptr_t) const -> bool = delete;
+        // resize to count, filling with value-initialized CharT if growing
+        auto resize(size_type count) -> void {
+            size_type cur = size();
+            if (count == cur) return;
+            if (count < cur) {
+                erase(count, npos);
+            } else {
+                append(count - cur, CharT{});
+            }
+        }
+        // resize to count with specified fill character
+        auto resize(size_type count, CharT ch) -> void {
+            size_type cur = size();
+            if (count == cur) return;
+            if (count < cur) {
+                erase(count, npos);
+            } else {
+                append(count - cur, ch);
+            }
+        }
+        // C++23 resize_and_overwrite: provide buffer of size count and let op return new size
+        template<class Operation>
+        auto resize_and_overwrite(size_type count, Operation op) -> void {
+            // prepare buffer of requested size, seeded with current contents up to count
+            std::basic_string<CharT, Traits, Allocator> buf;
+            buf.resize(count);
+            size_type to_copy = std::min(count, size());
+            if (to_copy) {
+                copy(buf.data(), to_copy, 0);
+            }
+            // call user operation; it should return the number of chars written [0..count]
+            auto new_size = static_cast<size_type>(op(buf.data(), count));
+            if (new_size > count) new_size = count;
+            // rebuild rope from buffer prefix
+            tree.clear();
+            if (new_size) {
+                tree.push(std::basic_string<CharT, Traits, Allocator>(buf.data(), new_size));
+            }
+        }
+        // swap contents
+        auto swap(BasicString& other) noexcept -> void {
+            using std::swap;
+            swap(this->tree, other.tree);
+        }
+        // substring
+        auto substr(size_type pos = 0, size_type count = npos) const -> BasicString {
+            size_type total = size();
+            if (pos > total) pos = total; // yield empty
+            size_type len = (count == npos) ? (total - pos) : std::min(count, total - pos);
+            std::basic_string<CharT, Traits, Allocator> flat;
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            BasicString result;
+            if (len) {
+                result.assign(flat.data() + pos, len);
+            } else {
+                result.clear();
+            }
+            return result;
+        }
+        // compare helpers
+        auto compare(const BasicString& other) const -> int {
+            size_type n1 = size();
+            size_type n2 = other.size();
+            size_type nmin = std::min(n1, n2);
+            // compare via incremental traversal
+            for (size_type i = 0; i < nmin; ++i) {
+                CharT a = getAtPos(i);
+                CharT b = other.getAtPos(i);
+                if (Traits::lt(a, b)) return -1;
+                if (Traits::lt(b, a)) return 1;
+            }
+            if (n1 < n2) return -1;
+            if (n1 > n2) return 1;
+            return 0;
+        }
+        auto compare(const std::basic_string<CharT, Traits, Allocator>& s) const -> int {
+            size_type n1 = size();
+            size_type n2 = s.size();
+            size_type nmin = std::min(n1, n2);
+            for (size_type i = 0; i < nmin; ++i) {
+                CharT a = getAtPos(i);
+                CharT b = s[i];
+                if (Traits::lt(a, b)) return -1;
+                if (Traits::lt(b, a)) return 1;
+            }
+            if (n1 < n2) return -1;
+            if (n1 > n2) return 1;
+            return 0;
+        }
+        auto compare(const CharT* s) const -> int {
+            if (!s) return 1; // non-empty > null
+            size_type n2 = Traits::length(s);
+            size_type n1 = size();
+            size_type nmin = std::min(n1, n2);
+            for (size_type i = 0; i < nmin; ++i) {
+                CharT a = getAtPos(i);
+                CharT b = s[i];
+                if (Traits::lt(a, b)) return -1;
+                if (Traits::lt(b, a)) return 1;
+            }
+            if (n1 < n2) return -1;
+            if (n1 > n2) return 1;
+            return 0;
+        }
+        // starts_with / ends_with / contains
+        auto starts_with(const std::basic_string<CharT, Traits, Allocator>& s) const -> bool {
+            return find(s, 0) == 0 || (s.empty() && true);
+        }
+        auto starts_with(const BasicString& other) const -> bool {
+            return find(other, 0) == 0 || (other.empty() && true);
+        }
+        auto starts_with(const CharT* s) const -> bool {
+            if (!s) return false;
+            std::basic_string<CharT, Traits, Allocator> tmp(s);
+            return starts_with(tmp);
+        }
+        auto starts_with(CharT ch) const -> bool {
+            return size() > 0 && Traits::eq(getAtPos(0), ch);
+        }
+        auto ends_with(const std::basic_string<CharT, Traits, Allocator>& s) const -> bool {
+            size_type n = size();
+            size_type m = s.size();
+            if (m > n) return false;
+            return substr(n - m).operator==(s);
+        }
+        auto ends_with(const BasicString& other) const -> bool {
+            size_type n = size();
+            size_type m = other.size();
+            if (m > n) return false;
+            return substr(n - m).operator==(other);
+        }
+        auto ends_with(const CharT* s) const -> bool {
+            if (!s) return false;
+            std::basic_string<CharT, Traits, Allocator> tmp(s);
+            return ends_with(tmp);
+        }
+        auto ends_with(CharT ch) const -> bool {
+            return size() > 0 && Traits::eq(getAtPos(size() - 1), ch);
+        }
+        auto contains(const std::basic_string<CharT, Traits, Allocator>& s) const -> bool {
+            return find(s, 0) != npos;
+        }
+        auto contains(const BasicString& other) const -> bool {
+            return find(other, 0) != npos;
+        }
+        auto contains(const CharT* s) const -> bool {
+            if (!s) return false;
+            std::basic_string<CharT, Traits, Allocator> tmp(s);
+            return contains(tmp);
+        }
+        auto contains(CharT ch) const -> bool {
+            return find(ch) != npos;
+        }
+        // find overloads using flattened string for simplicity
+        auto find(CharT ch, size_type pos = 0) const -> size_type {
+            size_type n = size();
+            for (size_type i = pos; i < n; ++i) if (Traits::eq(getAtPos(i), ch)) return i;
+            return npos;
+        }
+        auto find(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = 0) const -> size_type {
+            // use flattened haystack to delegate to std::basic_string::find
+            if (s.empty()) return pos <= size() ? pos : npos;
+            std::basic_string<CharT, Traits, Allocator> flat;
+            size_type total = size();
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            return flat.find(s, pos);
+        }
+        auto find(const CharT* s, size_type pos = 0) const -> size_type {
+            if (!s) return npos;
+            std::basic_string<CharT, Traits, Allocator> needle(s);
+            return find(needle, pos);
+        }
+        auto rfind(CharT ch, size_type pos = npos) const -> size_type {
+            if (empty()) return npos;
+            size_type i = std::min(pos, size() - 1);
+            for (;;){
+                if (Traits::eq(getAtPos(i), ch)) return i;
+                if (i == 0) break;
+                --i;
+            }
+            return npos;
+        }
+        auto rfind(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = npos) const -> size_type {
+            // flatten
+            std::basic_string<CharT, Traits, Allocator> flat;
+            size_type total = size();
+            flat.resize(total);
+            copy(flat.data(), total, 0);
+            return flat.rfind(s, pos);
+        }
+        auto rfind(const CharT* s, size_type pos = npos) const -> size_type {
+            if (!s) return npos;
+            return rfind(std::basic_string<CharT, Traits, Allocator>(s), pos);
+        }
+        auto find_first_of(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = 0) const -> size_type {
+            size_type n = size();
+            for (size_type i = pos; i < n; ++i) {
+                if (s.find(getAtPos(i)) != std::basic_string<CharT, Traits, Allocator>::npos) return i;
+            }
+            return npos;
+        }
+        auto find_first_of(const CharT* s, size_type pos = 0) const -> size_type {
+            if (!s) return npos;
+            return find_first_of(std::basic_string<CharT, Traits, Allocator>(s), pos);
+        }
+        auto find_first_not_of(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = 0) const -> size_type {
+            size_type n = size();
+            for (size_type i = pos; i < n; ++i) {
+                if (s.find(getAtPos(i)) == std::basic_string<CharT, Traits, Allocator>::npos) return i;
+            }
+            return npos;
+        }
+        auto find_first_not_of(const CharT* s, size_type pos = 0) const -> size_type {
+            if (!s) return npos;
+            return find_first_not_of(std::basic_string<CharT, Traits, Allocator>(s), pos);
+        }
+        auto find_last_of(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = npos) const -> size_type {
+            if (empty()) return npos;
+            size_type i = std::min(pos, size() - 1);
+            for (;;){
+                if (s.find(getAtPos(i)) != std::basic_string<CharT, Traits, Allocator>::npos) return i;
+                if (i == 0) break;
+                --i;
+            }
+            return npos;
+        }
+        auto find_last_of(const CharT* s, size_type pos = npos) const -> size_type {
+            if (!s) return npos;
+            return find_last_of(std::basic_string<CharT, Traits, Allocator>(s), pos);
+        }
+        auto find_last_not_of(const std::basic_string<CharT, Traits, Allocator>& s, size_type pos = npos) const -> size_type {
+            if (empty()) return npos;
+            size_type i = std::min(pos, size() - 1);
+            for (;;){
+                if (s.find(getAtPos(i)) == std::basic_string<CharT, Traits, Allocator>::npos) return i;
+                if (i == 0) break;
+                --i;
+            }
+            return npos;
+        }
+        auto find_last_not_of(const CharT* s, size_type pos = npos) const -> size_type {
+            if (!s) return npos;
+            return find_last_not_of(std::basic_string<CharT, Traits, Allocator>(s), pos);
+        }
     private:
         Tree<CharT, Traits, Allocator> tree;
 
@@ -824,18 +1135,19 @@ namespace Rope {
             std::size_t offset = 0;
             NodeType *leaf = nullptr;
 
-            // leaf_index = pos relative to the leaf
+            // Use cached root sizes to locate the leaf quickly
             for (std::size_t i = 0; i < roots.size(); ++i) {
-                if (pos < offset + roots[i]->size()) {
-                    leaf = roots[i]->getLeafByIndex(pos -= offset); // pos becomes local
+                auto root_size = roots[i].second;
+                if (pos < offset + root_size) {
+                    pos -= offset; // make pos local to the selected root
+                    leaf = roots[i].first->getLeafByIndex(pos);
                     break;
                 }
-                offset += roots[i]->size();
+                offset += root_size;
             }
-            // if (!leaf) throw std::out_of_range("index out of range");
 
             return leaf->str[pos]; // pos is now local to the leaf
         }
     };
 }
-#endif //ISPA_BASICSTRING_H
+#endif //ROPE_BASICSTRING_H

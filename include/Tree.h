@@ -1,7 +1,7 @@
-#ifndef ISPA_TREE_H
-#define ISPA_TREE_H
+#ifndef ROPE_TREE_H
+#define ROPE_TREE_H
 #include <Node.h>
-#include <iostream>
+#include <algorithm>
 #include <vector>
 #include <numeric>
 
@@ -14,34 +14,55 @@ namespace Rope {
     class Tree {
         using NodeType = Node<CharT, Traits, Allocator>;
         using StringType = std::basic_string<CharT, Traits, Allocator>;
-        std::vector<std::shared_ptr<NodeType>> roots;
-        std::vector<std::size_t> sizes;
+        std::vector<std::pair<std::shared_ptr<NodeType>, std::size_t>> roots;
         Allocator allocator;
 
         void insertAfter(NodeType* leaf, std::shared_ptr<NodeType> new_leaf, std::size_t root_index) {
-            if (sizes[root_index] + new_leaf->str.size() >= max_root_size) {
+            if (roots[root_index].second + new_leaf->str.size() >= max_root_size) {
                 leaf->ending_node = true;
-                roots.push_back(new_leaf);
-                sizes.push_back(new_leaf->str.size());
+                roots.emplace_back(new_leaf, new_leaf->str.size());
                 return;
             }
+            // Link the new leaf into the right chain of `leaf` (sibling chain)
             new_leaf->right = leaf->right;
+            new_leaf->top = leaf->top; // keep same parent context if used
             leaf->right = new_leaf;
 
-            // Update size of the current root
-            sizes[root_index] = roots[root_index]->size();
+            // Update size of the current root incrementally
+            roots[root_index].second += new_leaf->str.size();
+        }
+        void shiftLeaf(NodeType* leaf, std::size_t n) {
+            if (!leaf || n == 0) return;
+
+            auto old_right = leaf->right;
+
+            // We need a shared_ptr reference to "leaf" to continue chaining
+            std::shared_ptr<NodeType> prev = leaf->shared_from_this();
+
+            for (std::size_t i = 0; i < n; ++i) {
+                auto new_leaf = std::make_shared<NodeType>();
+                new_leaf->str.clear();
+
+                // Insert to the right of `prev` in sibling chain
+                prev->right = new_leaf;
+                new_leaf->right = nullptr;
+                new_leaf->top = leaf->top;
+
+                prev = new_leaf; // move forward
+            }
+
+            // Connect the tail back to the old right chain
+            prev->right = old_right;
         }
 
     public:
         using Node = NodeType;
 
         Tree() {
-            roots.push_back(std::make_shared<NodeType>("", allocator));
-            sizes.push_back(0);
+            roots.emplace_back(std::make_shared<NodeType>("", allocator), 0);
         }
         Tree(Allocator allocator) : allocator(allocator) {
-            roots.push_back(std::make_shared<NodeType>("", allocator));
-            sizes.push_back(0);
+            roots.emplace_back(std::make_shared<NodeType>("", allocator), 0);
         }
 
         void push(const StringType &str) {
@@ -49,13 +70,12 @@ namespace Rope {
 
             while (index < str.size()) {
                 // If no roots exist or last root is full, create a new root
-                if (roots.empty() || sizes.back() >= max_root_size) {
-                    roots.push_back(std::make_shared<NodeType>(StringType(), allocator));
-                    sizes.push_back(0);
+                if (roots.empty() || roots.back().second >= max_root_size) {
+                    roots.emplace_back(std::make_shared<NodeType>(StringType(), allocator), 0);
                 }
 
                 auto &current_root = roots.back();
-                std::size_t space_in_root = max_root_size - sizes.back();
+                std::size_t space_in_root = max_root_size - roots.back().second;
                 std::size_t chunk_size = std::min(space_in_root, str.size() - index);
 
                 // Split chunk into leaves
@@ -68,13 +88,13 @@ namespace Rope {
                 // If no leaves (shouldn’t happen), skip
                 if (leaves.empty()) break;
                 // If current_root.str is empty, move first leaf’s str into it
-                if (current_root->str.empty()) {
-                    current_root->str = std::move(leaves.front()->str);
+                if (current_root.first->str.empty()) {
+                    current_root.first->str = std::move(leaves.front()->str);
                     leaves.front()->str.clear();
                 }
 
                 // Attach subtree to the rightmost leaf of current_root
-                NodeType* right_most = current_root.get();
+                NodeType* right_most = current_root.first.get();
                 while (right_most->right) right_most = right_most->right.get();
 
                 // Attach all remaining leaves except the first (already moved)
@@ -84,7 +104,7 @@ namespace Rope {
                     right_most = leaves[i].get();
                 }
 
-                // Update weights along the path
+                // Update weights along the path (best-effort, not critical for current usage)
                 NodeType* current = right_most;
                 while (current) {
                     current->weight = (current->left ? current->left->size() : 0) + current->str.size();
@@ -92,8 +112,8 @@ namespace Rope {
                     current = current->top;
                 }
 
-                // Update root size
-                sizes.back() = current_root->size();
+                // Update root size incrementally by the amount appended into this root
+                current_root.second += chunk_size;
 
                 index += chunk_size;
             }
@@ -109,43 +129,68 @@ namespace Rope {
             auto* leaf = getLeafByIndex(index, offset);
             auto root_index = getRootByIndex(index);
 
-            // Local position in leaf
-            leaf->str.insert(leaf->str.begin() + offset, str.begin(), str.end());
-
-            while (leaf->str.size() > max_leaf_size) {
-                std::string right_part(leaf->str.begin() + max_leaf_size, leaf->str.end());
-                leaf->str.erase(leaf->str.begin() + max_leaf_size, leaf->str.end());
-                NodeType node;
-                node.str = StringType(std::move(right_part), allocator);
-                node.top = leaf;
-                auto new_leaf = std::make_shared<NodeType>(node);
-                insertAfter(leaf, new_leaf, root_index);
-
-                leaf->weight = leaf->str.size() + (leaf->left ? leaf->left->size() : 0);
-                new_leaf->weight = new_leaf->str.size();
-
-                leaf = new_leaf.get();
+            // Split the leaf at insertion point to preserve order
+            StringType tail;
+            if (offset < leaf->str.size()) {
+                tail.assign(leaf->str.begin() + offset, leaf->str.end());
+                leaf->str.erase(leaf->str.begin() + offset, leaf->str.end());
             }
 
-            sizes[root_index] = roots[root_index]->size();
+            // Fill current leaf up to max_leaf_size
+            std::size_t begin_in_str = 0;
+            std::size_t can_take_here = std::min<std::size_t>(max_leaf_size - leaf->str.size(), str.size());
+            if (can_take_here > 0) {
+                leaf->str.insert(leaf->str.end(), str.begin(), str.begin() + can_take_here);
+                begin_in_str = can_take_here;
+            }
+            if (begin_in_str == str.size() && tail.empty()) {
+                // everything fits into current leaf; root size grows by the inserted amount
+                roots[root_index].second += str.size();
+                return;
+            }
+
+            // How many extra leaves needed for remaining insertion (+1 for tail if exists)?
+            std::size_t remaining = str.size() - begin_in_str;
+            std::size_t chunks = (remaining + max_leaf_size - 1) / max_leaf_size;
+            std::size_t extra = chunks + (tail.empty() ? 0 : 1);
+            shiftLeaf(leaf, extra);
+
+            // Fill new leaves with remaining insertion
+            auto current = leaf->right;
+            for (std::size_t i = begin_in_str; i < str.size(); i += max_leaf_size) {
+                auto end = std::min(i + max_leaf_size, str.size());
+                current->str.assign(str.begin() + i, str.begin() + end);
+                current = current->right;
+            }
+
+            // Place the old tail after the inserted content
+            if (!tail.empty()) {
+                current->str = std::move(tail);
+                // advance to next (old right)
+                current = current->right;
+            }
+
+            // Finally, root size increases by the total inserted length
+            roots[root_index].second += str.size();
+
         }
 
         auto getRootByIndex(std::size_t index) const -> std::size_t {
             std::size_t offset = 0;
             for (std::size_t i = 0; i < roots.size(); ++i) {
-                if (index < offset + sizes[i]) return i;
-                offset += sizes[i];
+                if (index < offset + roots[i].second) return i;
+                offset += roots[i].second;
             }
             return roots.size() - 1;
         }
 
         auto getLeafByIndex(std::size_t index, std::size_t &offset) const -> NodeType* {
             for (std::size_t i = 0; i < roots.size(); ++i) {
-                if (index < offset + sizes[i]) {
+                if (index < offset + roots[i].second) {
                     offset = index - offset;
-                    return roots[i]->getLeafByIndex(offset);
+                    return roots[i].first->getLeafByIndex(offset);
                 }
-                offset += sizes[i];
+                offset += roots[i].second;
             }
             throw std::out_of_range("Rope::Tree::getLeadByIndex");
         }
@@ -172,8 +217,8 @@ namespace Rope {
 
             // 3. If no parent → move to next root
             for (std::size_t i = 0; i + 1 < roots.size(); ++i) {
-                if (roots[i].get() == cur) { // <--- must check original node
-                    return roots[i+1]->leftmostLeaf();
+                if (roots[i].first.get() == cur) { // <--- must check original node
+                    return roots[i+1].first->leftmostLeaf();
                 }
             }
 
@@ -192,56 +237,29 @@ namespace Rope {
                 while (node->top)
                     node = node->top;
                 for (std::size_t i = 1; i < roots.size(); ++i) {
-                    if (roots[i].get() == node) {
-                        return roots[i-1]->rightmostLeaf();
+                    if (roots[i].first.get() == node) {
+                        return roots[i-1].first->rightmostLeaf();
                     }
                 }
             }
             return nullptr;
         }
-        void printTree(const Node* node, int depth = 0) const {
-            if (!node) return;
-            std::string indent(depth * 2, ' ');
-            std::cout << indent << "- Node(";
-            if (!node->str.empty()) {
-                std::cout << "\"" << node->str << "\"";
-            } else {
-                std::cout << "internal";
-            }
-            std::cout << "), size=" << node->size() << "\n";
-
-            if (node->left) {
-                std::cout << indent << "  L:\n";
-                printTree(node->left.get(), depth + 2);
-            }
-            if (node->right) {
-                std::cout << indent << "  R:\n";
-                printTree(node->right.get(), depth + 2);
-            }
-        }
-        void printForest() const {
-            for (std::size_t i = 0; i < roots.size(); ++i) {
-                std::cout << "Root[" << i << "], size=" << sizes[i] << ":\n";
-                printTree(roots[i].get(), 1);
-            }
-        }
         auto size() const -> std::size_t {
-            return std::accumulate(sizes.begin(), sizes.end(), static_cast<std::size_t>(0));
+            return std::accumulate(roots.begin(),  roots.end(), static_cast<std::size_t>(0), [](std::size_t acc, const auto &value) {
+                return acc + value.second;
+            });
         }
 
         void clear() {
-            roots = { std::make_shared<NodeType>("", allocator) };
-            sizes = {0};
+            roots = { std::make_pair<std::shared_ptr<NodeType>, std::size_t>({ std::make_shared<NodeType>("", allocator) }, 0) };
         }
         auto operator==(const Tree &other) const -> bool {
             return size() == other.size() && roots == other.roots;
         }
         auto get_allocator() -> Allocator { return allocator; }
         auto &getRoots() { return roots; }
-        auto &getSizes() { return sizes; }
         auto &getRoots() const { return roots; }
-        auto &getSizes() const { return sizes; }
     };
 }
 
-#endif //ISPA_TREE_H
+#endif //ROPE_TREE_H
