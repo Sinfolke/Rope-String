@@ -1,24 +1,12 @@
 # RopeString
-
-A header-only C++ rope-based string library that provides a std::string-like API but with a tree-backed storage (rope) optimized for efficient insert/erase/concat in the middle of large strings. It is useful when you need to edit long texts frequently (e.g., editors, parsers) without paying for costly reallocations and memmoves typical for contiguous strings.
-
-This project exposes templated Rope::BasicString<CharT> and convenient aliases:
-- Rope::String   = BasicString<char>
-- Rope::WString  = BasicString<wchar_t>
-- Rope::U8String = BasicString<char8_t>
-- Rope::U16String= BasicString<char16_t>
-- Rope::U32String= BasicString<char32_t>
-
-See include/RopeString.h for the aliases and include/BasicString.h for the full implementation.
-
+A C++ Rope-String is a string with efficient insert/erase/replace in middle. The string is made following std::basic_string API.
 
 ## Key properties
 - Non-contiguous storage (rope) consisting of leaf chunks connected by a balanced tree.
 - Many std::basic_string-like constructors and member functions for familiarity.
-- Forward iterators over characters; also reverse iteration is supported.
+- Forward and reverse iterators over characters.
 - Efficient insert/erase/replace operations in the middle of a large string.
 - Works with multiple character types (char, wchar_t, char8_t, char16_t, char32_t).
-
 
 ## Installation
 You can use this library in three common ways.
@@ -26,50 +14,53 @@ You can use this library in three common ways.
 1) add_subdirectory (recommended for vendoring)
 - Copy or add this repository as a subdirectory.
 - In your CMakeLists.txt:
-
+  ```cmake
   add_subdirectory(external/RopeString)
   target_link_libraries(your_target PRIVATE Rope)
   target_include_directories(your_target PRIVATE external/RopeString/include)
-
+  ```
 2) FetchContent
-
+  ```cmake
   include(FetchContent)
   FetchContent_Declare(
     RopeString
-    GIT_REPOSITORY https://github.com/your-org-or-user/RopeString.git
-    GIT_TAG        <commit-or-tag>
+    GIT_REPOSITORY https://github.com/Sinfolke/Rope-String
+    # GIT_TAG        <commit-or-tag>
   )
   FetchContent_MakeAvailable(RopeString)
   target_link_libraries(your_target PRIVATE Rope)
-
+  ```
 3) find_package (if you have installed it)
 - Configure and install the library somewhere first:
-
+  ```
   cmake -S . -B build
   cmake --build build --target install
-
+  ```
 - Then in your project:
-
+  ```cmake
   find_package(Rope CONFIG REQUIRED)
   target_link_libraries(your_target PRIVATE Rope)
-
+  ```
 Include the header in your sources:
-
+  ```C++
   #include <RopeString.h>
-  using Rope::String;
-
+  ```
+  Or import a C++20 module
+  ```C++
+  import Rope.String;
+  ```
 
 ## Quick start
-
+  ```C++
   #include <RopeString.h>
   #include <iostream>
 
   int main() {
-      Rope::String s = "hello";
-      s.append(", world");
-      s.insert(5, 1, '!');        // efficient insert near the middle
-      s.erase(0, 1);              // remove first char
-      auto sub = s.substr(1, 5);  // take substring efficiently
+      Rope::String s = "Hello";
+      s.append(", World!");
+      s.insert(5, 1, '!');
+      s.erase(0, 1);
+      auto sub = s.substr(1, 5);
 
       // Iteration (forward)
       for (auto ch : s) std::cout << ch;
@@ -79,12 +70,39 @@ Include the header in your sources:
       auto c = s.c_str();         // unique_ptr<CharT[]>; zero-terminated copy
       std::cout << c.get() << "\n";
   }
-
+  ```
 
 ## API overview and std::string compatibility
 The API aims to be familiar to users of std::basic_string, but due to rope storage there are important differences. Below is a high-level map of what is available. For exact signatures please see include/BasicString.h.
 
 Constructors (provided)
+```C++
+        BasicString() {}
+        BasicString(const Allocator &alloc) : tree(alloc) {}
+        BasicString(size_type count, CharT ch, const Allocator& alloc = Allocator());
+        template<typename InputIt>
+        BasicString(const InputIt first, InputIt last, Allocator alloc = Allocator());
+#ifdef __cpp_lib_from_range
+        template<std::ranges::range R>
+        requires std::convertible_to<std::ranges::range_value_t<R>, CharT>
+        BasicString(std::from_range_t, R&& rg, const Allocator& alloc = Allocator());
+#endif
+        BasicString( const CharT* s, size_type count, const Allocator& alloc = Allocator() );
+        BasicString( const CharT* s, const Allocator& alloc = Allocator() );
+        BasicString(std::nullptr_t) = delete;
+        template<typename StringViewLike>
+        explicit BasicString( const StringViewLike& t, const Allocator& alloc = Allocator() );
+        template<typename StringViewLike>
+        BasicString(const StringViewLike& t, size_type pos, size_type count, const Allocator& alloc = Allocator() );
+
+        BasicString( const BasicString& other );
+        BasicString(BasicString &&other) noexcept;
+        BasicString( const BasicString& other, const Allocator &alloc);
+        BasicString(BasicString &&other, const Allocator &alloc);
+        BasicString( const BasicString& other, size_type pos, const Allocator& alloc = Allocator() );
+        BasicString( const BasicString& other, size_type pos, size_type count, const Allocator& alloc = Allocator() );
+        BasicString(std::initializer_list<CharT> ilist, const Allocator& alloc = Allocator() );
+```
 - Default, copy, move, count+char, iterator range, from_range, C-string, string-view-like, initializer_list, substring constructors.
 
 Assignment/append/insert/replace/erase (provided)
