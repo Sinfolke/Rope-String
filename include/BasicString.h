@@ -8,111 +8,6 @@
 #include <ranges>
 #include <cstring>
 
-namespace {
-    template<typename CharT, typename Tree>
-    class iterator {
-    public:
-        using value_type        = CharT;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = CharT*;
-        using reference         = CharT&;
-        using iterator_category = std::forward_iterator_tag;
-
-        explicit iterator(Tree &tree, std::size_t pos) : tree_(tree) {
-            auto size = tree_.size();
-            if (pos >= size) {
-                current = nullptr;
-                global_pos = size;
-                return;
-            }
-            std::size_t offset = 0;
-            global_pos = pos;
-            current = tree.getLeafByIndex(pos, offset);
-            this->pos = offset;
-        }
-        explicit iterator(Tree &tree) : tree_(tree) {}
-        auto operator*() const -> CharT {
-            return current->str[pos];
-        }
-
-        auto operator++() -> iterator& {
-            auto size = tree_.size();
-            if (global_pos + 1 >= size) {
-                global_pos = size;
-                current = nullptr;
-                return *this;
-            }
-            global_pos++;
-            if (pos + 1 >= current->str.size()) {
-                current = tree_.nextLeaf(current);
-                pos = 0;
-            } else {
-                ++pos;
-            }
-            return *this;
-        }
-
-        auto operator++(int) -> iterator {
-            auto tmp = *this;
-            ++(*this);
-            return tmp;
-        }
-
-        auto operator==(const iterator& other) const -> bool {
-            return current == other.current && global_pos == other.global_pos;
-        }
-
-        auto operator!=(const iterator& other) const -> bool {
-            return !(*this == other);
-        }
-
-        auto position() const -> std::size_t { return global_pos; }
-
-    protected:
-        Tree &tree_;
-        std::size_t pos;
-        std::size_t global_pos;
-        Tree::Node *current = nullptr;
-    };
-    template<typename CharT, typename Tree>
-    class reverse_iterator : public iterator<CharT, Tree> {
-        using Base = iterator<CharT, Tree>;
-    public:
-        explicit reverse_iterator(Tree &tree, std::size_t pos = 0) : Base(tree) {
-            auto size = tree.size();
-            if (size - pos - 1 == std::size_t(-1)) {
-                Base::current = nullptr;
-                Base::global_pos = std::size_t(-1);
-                return;
-            }
-            std::size_t offset = 0;
-            Base::global_pos = size - pos - 1;
-            Base::current = tree.getLeafByIndex(Base::global_pos, offset);
-            Base::pos = Base::current->str.size() - offset;
-        }
-        auto operator++() -> reverse_iterator& {
-            if (Base::global_pos - 1 == std::size_t(-1)) {
-                Base::global_pos = std::size_t(-1);
-                Base::current = nullptr;
-                return *this;
-            }
-            Base::global_pos--;
-            if (Base::pos - 1 == std::size_t(-1)) {
-                Base::current = Base::tree_.prevLeaf(Base::current);
-                Base::pos = Base::current->str.size() - 1;
-            } else {
-                --Base::pos;
-            }
-            return *this;
-        }
-
-        auto operator++(int) -> reverse_iterator {
-            auto tmp = *this;
-            ++(*this);
-            return tmp;
-        }
-    };
-}
 namespace Rope {
     template<typename CharT, typename Traits = std::char_traits<CharT>, typename Allocator = std::allocator<CharT>>
     class BasicString {
@@ -129,10 +24,113 @@ namespace Rope {
         using const_reference = const value_type&;
         using pointer = std::allocator_traits<Allocator>::pointer;
         using const_pointer = const std::allocator_traits<Allocator>::pointer;
-        using iterator = ::iterator<CharT, TreeType>;
-        using const_iterator = ::iterator<const CharT, const TreeType>;
-        using reverse_iterator = ::reverse_iterator<CharT, TreeType>;
-        using reverse_const_iterator = ::reverse_iterator<const CharT, const TreeType>;
+        template<typename CharType>
+        class iterator {
+            using TreeType = Tree<CharType, Traits, Allocator>;
+        public:
+            using value_type        = CharType;
+            using difference_type   = std::ptrdiff_t;
+            using pointer           = CharType*;
+            using reference         = CharType&;
+            using iterator_category = std::forward_iterator_tag;
+
+            explicit iterator(TreeType &tree, std::size_t pos) : tree_(tree) {
+                auto size = tree_.size();
+                if (pos >= size) {
+                    current = nullptr;
+                    global_pos = size;
+                    return;
+                }
+                std::size_t offset = 0;
+                global_pos = pos;
+                current = tree.getLeafByIndex(pos, offset);
+                this->pos = offset;
+            }
+            explicit iterator(TreeType &tree) : tree_(tree) {}
+            auto operator*() const -> CharT {
+                return current->str[pos];
+            }
+
+            auto operator++() -> iterator& {
+                auto size = tree_.size();
+                if (global_pos + 1 >= size) {
+                    global_pos = size;
+                    current = nullptr;
+                    return *this;
+                }
+                global_pos++;
+                if (pos + 1 >= current->str.size()) {
+                    current = tree_.nextLeaf(current);
+                    pos = 0;
+                } else {
+                    ++pos;
+                }
+                return *this;
+            }
+
+            auto operator++(int) -> iterator {
+                auto tmp = *this;
+                ++(*this);
+                return tmp;
+            }
+
+            auto operator==(const iterator& other) const -> bool {
+                return current == other.current && global_pos == other.global_pos;
+            }
+
+            auto operator!=(const iterator& other) const -> bool {
+                return !(*this == other);
+            }
+
+            auto position() const -> std::size_t { return global_pos; }
+
+        protected:
+            TreeType &tree_;
+            std::size_t pos;
+            std::size_t global_pos;
+            NodeType *current = nullptr;
+        };
+        template<typename CharType>
+        class reverse_iterator : public iterator<CharType> {
+            using Base = iterator<CharType>;
+            using TreeType = Tree<CharType, Traits, Allocator>;
+        public:
+            explicit reverse_iterator(TreeType &tree, std::size_t pos = 0) : Base(tree) {
+                auto size = tree.size();
+                if (size - pos - 1 == std::size_t(-1)) {
+                    Base::current = nullptr;
+                    Base::global_pos = std::size_t(-1);
+                    return;
+                }
+                std::size_t offset = 0;
+                Base::global_pos = size - pos - 1;
+                Base::current = tree.getLeafByIndex(Base::global_pos, offset);
+                Base::pos = Base::current->str.size() - offset;
+            }
+            auto operator++() -> reverse_iterator& {
+                if (Base::global_pos - 1 == std::size_t(-1)) {
+                    Base::global_pos = std::size_t(-1);
+                    Base::current = nullptr;
+                    return *this;
+                }
+                Base::global_pos--;
+                if (Base::pos - 1 == std::size_t(-1)) {
+                    Base::current = Base::tree_.prevLeaf(Base::current);
+                    Base::pos = Base::current->str.size() - 1;
+                } else {
+                    --Base::pos;
+                }
+                return *this;
+            }
+
+            auto operator++(int) -> reverse_iterator {
+                auto tmp = *this;
+                ++(*this);
+                return tmp;
+            }
+        };
+        using const_iterator = iterator<const CharT>;
+        using reverse_const_iterator = reverse_iterator<const CharT>;
         static constexpr auto npos = StringType::npos;
         BasicString() {}
         BasicString(const Allocator &alloc) : tree(alloc) {}
@@ -362,14 +360,14 @@ namespace Rope {
                 [alloc, len](CharT* p) mutable { AllocTraits::deallocate(alloc, p, len + 1); }
             );
         }
-        auto begin() -> iterator {
-            return iterator(tree, 0);
+        auto begin() -> iterator<CharT> {
+            return iterator<CharT>(tree, 0);
         }
         auto begin() const -> const_iterator {
             return const_iterator(tree, 0);
         }
-        auto end() -> iterator {
-            return iterator(tree, tree.size());
+        auto end() -> iterator<CharT> {
+            return iterator<CharT>(tree, tree.size());
         }
         auto end() const -> const_iterator {
             return const_iterator(tree, tree.size());
@@ -380,11 +378,11 @@ namespace Rope {
         auto cend() const -> const_iterator {
             return const_iterator(tree, tree.size());
         }
-        auto rbegin() -> reverse_iterator {
-            return reverse_iterator(tree, 0);
+        auto rbegin() -> reverse_iterator<CharT> {
+            return reverse_iterator<CharT>(tree, 0);
         }
-        auto rend() -> reverse_iterator {
-            return reverse_iterator(tree, tree.size());
+        auto rend() -> reverse_iterator<CharT> {
+            return reverse_iterator<CharT>(tree, tree.size());
         }
         auto crbegin() const -> reverse_const_iterator {
             return reverse_const_iterator(tree, 0);
@@ -438,31 +436,31 @@ namespace Rope {
         }
 
         // (6) insert single char at iterator position
-        auto insert(iterator pos, CharT ch) -> iterator {
-            size_type index = pos - begin();
+        auto insert(iterator<CharT> pos, CharT ch) -> iterator<CharT> {
+            size_type index = pos.position();
             insert(index, 1, ch);
-            return begin() + index;
+            return iterator<CharT>(tree, index);
         }
 
         // (7) insert count copies of char at iterator position
-        auto insert(const_iterator pos, size_type count, CharT ch) -> iterator {
-            size_type index = pos - cbegin();
+        auto insert(const_iterator pos, size_type count, CharT ch) -> iterator<CharT> {
+            size_type index = pos.position();
             insert(index, count, ch);
-            return begin() + index;
+            return iterator<CharT>(tree, index);
         }
 
         // (8) insert range [first, last) at iterator position
         template<typename InputIt>
-        auto insert(const_iterator pos, InputIt first, InputIt last) -> iterator {
-            size_type index = pos - cbegin();
+        auto insert(const_iterator pos, InputIt first, InputIt last) -> iterator<CharT> {
+            size_type index = pos.position();
             for (auto it = first; it != last; ++it) {
                 tree.insert(index++, StringType(1, *it));
             }
-            return begin() + (pos - cbegin());
+            return iterator<CharT>(tree, pos.position());
         }
 
         // (9) insert initializer_list at iterator position
-        auto insert(const_iterator pos, std::initializer_list<CharT> ilist) -> iterator {
+        auto insert(const_iterator pos, std::initializer_list<CharT> ilist) -> iterator<CharT> {
             return insert(pos, ilist.begin(), ilist.end());
         }
 
@@ -741,7 +739,7 @@ namespace Rope {
 #ifdef __cpp_lib_from_range
         template<std::ranges::range R>
         requires std::convertible_to<std::ranges::range_value_t<R>, CharT>
-        auto replace_range(const_iterator begin, const_iterator end, R&& rg) -> iterator {
+        auto replace_with_range(const_iterator begin, const_iterator end, R&& rg) -> iterator {
             return replace(begin, end, StringType(std::from_range, std::forward<R>(rg), get_allocator()));
         }
 #endif
@@ -881,6 +879,33 @@ namespace Rope {
             return true;
         }
         auto operator==(std::nullptr_t) const -> bool = delete;
+
+        // operator+= overloads
+        auto operator+=(const BasicString& str) -> BasicString& {
+            // append contents of another rope without flattening
+            for (auto& root : str.tree.getRoots()) {
+                tree.push(root->str);
+            }
+            return *this;
+        }
+        auto operator+=(CharT ch) -> BasicString& {
+            push_back(ch);
+            return *this;
+        }
+        auto operator+=(const CharT* s) -> BasicString& {
+            if (!s) return *this; // ignore null pointer
+            tree.push(StringType(s));
+            return *this;
+        }
+        auto operator+=(std::initializer_list<CharT> ilist) -> BasicString& {
+            tree.push(StringType(ilist));
+            return *this;
+        }
+        template<class StringViewLike>
+        auto operator+=(const StringViewLike& t) -> BasicString& {
+            tree.push(StringType(t));
+            return *this;
+        }
         // resize to count, filling with value-initialized CharT if growing
         auto resize(size_type count) -> void {
             size_type cur = size();
